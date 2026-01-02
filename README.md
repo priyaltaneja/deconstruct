@@ -275,33 +275,13 @@ supabase db test
 4. Add Zod schema in `web/src/schemas/validation.ts`
 5. Create UI component in `web/src/components/`
 
-See CLAUDE.md for detailed workflow.
-
-## Troubleshooting
-
-### Jobs stuck in "processing"
-- Check Modal dashboard for errors
-- Increase timeout in function decorator
-- Verify API keys in Modal secrets
-
-### "Invalid JSON" errors
-- Check `reasoning_logs` table for raw output
-- Model may be mixing reasoning with JSON
-- Update `extract_json_from_response()`
-
-### Embeddings search returns nothing
-- Verify embeddings are generated after extraction
-- Check vector dimension (should be 1536)
-- Rebuild ivfflat index
 
 ## Roadmap
 
 - [ ] Support for more document types (invoices, forms, etc.)
 - [ ] Fine-tuned complexity detector (replace heuristics)
 - [ ] Streaming extraction for large PDFs
-- [ ] Web app authentication (Supabase Auth)
 - [ ] Export to common formats (CSV, Excel, etc.)
-- [ ] API endpoints for external integrations
 
 ## License
 
