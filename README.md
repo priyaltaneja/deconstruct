@@ -8,8 +8,8 @@ Transform unstructured PDFs into high-fidelity structured JSON using intelligent
 
 Deconstruct is an extraction engine that uses a **two-tier reasoning system** to balance cost and accuracy for content extraction:
 
-- **System 1 (Fast):** Llama 3.2 Vision for simple documents (~$0.0001/doc)
-- **System 2 (Deep):** Claude Opus 4.5 for complex documents (~$0.05-0.20/doc)
+- **System 1 (Fast):** Qwen/Qwen2.5-7B-Instruct for simple documents (~$0.0001/doc)
+- **System 2 (Deep):** Qwen/Qwen2-VL-7B-Instruct for complex documents (~$0.05-0.20/doc)
 - **Auto-Routing:** Complexity detection determines which system to use
 - **Verification Loop:** Critic agent re-extracts failed extractions
 
@@ -146,7 +146,7 @@ print(results[0].model_dump_json(indent=2))
 Adjust the threshold for System 1 vs System 2 routing in `gpu/modal_app.py`:
 
 ```python
-COMPLEXITY_THRESHOLD = 0.8  # 0.0 (always System 1) to 1.0 (always System 2)
+COMPLEXITY_THRESHOLD = 0.5  # 0.0 (always System 1) to 1.0 (always System 2)
 ```
 
 Or override per-batch in the web UI.
@@ -158,7 +158,7 @@ To use a different System 2 model:
 ```python
 # In gpu/modal_app.py, system2_extract function
 response = client.messages.create(
-    model="claude-opus-4-5-20251101",  # Change this
+    model="",  # Change this
     # ...
 )
 ```
