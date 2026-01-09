@@ -103,9 +103,9 @@ vllm_vision_image = (
     .add_local_python_source("schemas", "config")
 )
 
-# OCR processing image (lightweight, no LLM)
+# OCR processing image (with GPU support)
 ocr_image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.from_registry("nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04", add_python="3.11")
     .apt_install(
         "libgl1-mesa-glx",
         "libglib2.0-0",
@@ -115,7 +115,7 @@ ocr_image = (
         "poppler-utils",
     )
     .pip_install(
-        "paddlepaddle",
+        "paddlepaddle-gpu",
         "paddleocr",
         "pdf2image",
         "pillow",
