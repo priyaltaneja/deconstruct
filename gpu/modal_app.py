@@ -47,19 +47,7 @@ from config import (
 
 
 # ============ MODAL SETUP ============
-
-# Get path to current directory for mounting local files
-import pathlib
-LOCAL_DIR = pathlib.Path(__file__).parent
-
-# Mount for local Python modules (schemas, config)
-local_modules = modal.Mount.from_local_file(LOCAL_DIR / "schemas.py", remote_path="/root/schemas.py")
-config_mount = modal.Mount.from_local_file(LOCAL_DIR / "config.py", remote_path="/root/config.py")
-
-app = modal.App(
-    "deconstruct-extractor",
-    mounts=[local_modules, config_mount],
-)
+app = modal.App("deconstruct-extractor")
 
 # Base image with common dependencies
 base_image = (
@@ -80,6 +68,7 @@ base_image = (
         "numpy",
         "pydantic>=2.0",
     )
+    .add_local_python_source("schemas", "config")
 )
 
 # vLLM image for text model serving
@@ -91,6 +80,7 @@ vllm_text_image = (
         "transformers>=4.40.0",
         "pydantic>=2.0",
     )
+    .add_local_python_source("schemas", "config")
 )
 
 # vLLM image for vision model serving
@@ -110,6 +100,7 @@ vllm_vision_image = (
         "qwen-vl-utils",
         "pydantic>=2.0",
     )
+    .add_local_python_source("schemas", "config")
 )
 
 # OCR processing image (lightweight, no LLM)
@@ -131,6 +122,7 @@ ocr_image = (
         "numpy",
         "pydantic>=2.0",
     )
+    .add_local_python_source("schemas", "config")
 )
 
 # Shared volume for model caching
