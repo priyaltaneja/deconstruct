@@ -84,10 +84,7 @@ function App() {
     mainContent: {
       maxWidth: '1200px',
       margin: '0 auto',
-      padding: activeBatchId ? '32px' : '24px 32px',
-      display: 'grid',
-      gridTemplateColumns: activeBatchId ? '420px 1fr' : '1fr',
-      gap: '24px',
+      padding: '24px 32px',
     },
     card: {
       backgroundColor: 'var(--bg-secondary)',
@@ -195,57 +192,11 @@ function App() {
             </div>
           </>
         ) : (
-          <>
-            {/* Upload Section */}
-            <div>
-              <div style={styles.card}>
-                <h2 style={styles.cardTitle}>Upload Documents</h2>
-                <FileUpload />
-              </div>
-
-              {/* Quick Stats */}
-              <div style={{ ...styles.card, marginTop: '24px' }}>
-                <h3 style={styles.cardTitle}>System Status</h3>
-                <div style={{ fontSize: '0.95em' }}>
-                  <StatRow
-                    label="Total Batches"
-                    value={batches.size}
-                  />
-                  <StatRow
-                    label="Active Jobs"
-                    value={useExtractionStore.getState().getActiveJobs().length}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Job Monitor */}
-            <JobMonitor />
-          </>
+          <JobMonitor />
         )}
       </div>
     </div>
   );
 }
-
-const StatRow: React.FC<{ label: string; value: number }> = ({ label, value }) => (
-  <div
-    style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      padding: '12px 16px',
-      marginBottom: '8px',
-      backgroundColor: 'var(--bg-tertiary)',
-      borderRadius: '8px',
-      border: '1px solid var(--border-color)',
-    }}
-  >
-    <span style={{ color: 'var(--text-secondary)' }}>{label}:</span>
-    <strong style={{ color: 'var(--accent-blue)', fontSize: '1.1em' }}>
-      {value}
-    </strong>
-  </div>
-);
-
 
 export default App;
