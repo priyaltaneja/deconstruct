@@ -63,6 +63,7 @@ system2_image = (
         "transformers>=4.40.0",
         "pillow",
         "pdf2image",
+        "pymupdf>=1.24.0",
         "qwen-vl-utils",
         "pydantic>=2.0",
         "fastapi",
