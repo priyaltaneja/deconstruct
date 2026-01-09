@@ -1,6 +1,6 @@
-import { FileUpload } from '@/components/FileUpload';
-import { ResultsView } from '@/components/ResultsView';
-import { useExtractionStore } from '@/store/extractionStore';
+import { FileUpload } from './components/FileUpload';
+import { ResultsView } from './components/ResultsView';
+import { useExtractionStore } from './store/extractionStore';
 
 function App() {
   const batches = useExtractionStore((state) => state.batches);

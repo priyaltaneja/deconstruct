@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, FileText, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useExtractionStore } from '@/store/extractionStore';
-import { getApiUrl } from '@/config/environment';
+import { Button } from './ui/button';
+import { useExtractionStore } from '../store/extractionStore';
+import { getApiUrl } from '../config/environment';
 
 interface FileWithPreview extends File {
   error?: string;

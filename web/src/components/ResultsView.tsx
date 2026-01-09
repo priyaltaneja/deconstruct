@@ -1,5 +1,5 @@
-import { useExtractionStore, ExtractionJob } from '@/store/extractionStore';
-import { Button } from '@/components/ui/button';
+import { useExtractionStore, ExtractionJob } from '../store/extractionStore';
+import { Button } from './ui/button';
 import { ArrowLeft, Copy, Check, Loader2, FileText, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useState } from 'react';
 
