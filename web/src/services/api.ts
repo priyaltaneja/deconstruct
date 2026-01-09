@@ -49,7 +49,7 @@ export const extractBatch = async (request: BatchExtractionRequest) => {
   formData.append('force_system2', String(request.forceSystem2 ?? false));
   formData.append('enable_verification', String(request.enableVerification ?? false));
 
-  const response = await fetch(`${MODAL_API_URL}/api/batch-extract`, {
+  const response = await fetch(`${MODAL_API_URL}/api/extract/batch`, {
     method: 'POST',
     body: formData,
   });

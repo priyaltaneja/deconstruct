@@ -1,5 +1,5 @@
 """
-Simple local API that calls Modal via subprocess
+Simple local API that calls Modal GPU functions via subprocess
 Runs on localhost:8000
 """
 
@@ -26,7 +26,7 @@ try:
     print("[SUPABASE] Client loaded - persistence enabled")
 except ImportError as e:
     SUPABASE_ENABLED = False
-    print(f"[SUPABASE] Not available ({e}) - results will NOT be saved to database")
+    print(f"[SUPABASE] Not available - results will NOT be saved to database")
 
 app = FastAPI(title="Deconstruct Simple API")
 
@@ -60,13 +60,16 @@ async def list_extractions(limit: int = 20):
     return {"extractions": extractions, "count": len(extractions)}
 
 
+@app.post("/api/extract/batch")
 @app.post("/api/batch-extract")
 async def extract_batch(
     files: list[UploadFile] = File(...),
+    batch_name: str = Form("Untitled Batch"),
     complexity_threshold: float = Form(0.8),
     force_system2: bool = Form(False),
+    enable_verification: bool = Form(True),
 ):
-    """Extract documents by calling Modal via subprocess"""
+    """Extract documents using Modal GPU functions"""
     try:
         print(f"\n{'='*70}")
         print(f"BATCH EXTRACTION: {len(files)} file(s)")
@@ -77,71 +80,101 @@ async def extract_batch(
         for i, file in enumerate(files, 1):
             print(f"\n[{i}/{len(files)}] Processing: {file.filename}")
 
-            # Save file to temp location
+            # Read file bytes
             pdf_bytes = await file.read()
+
+            # Save to temp file for Modal extraction
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
                 tmp.write(pdf_bytes)
                 tmp_path = tmp.name
 
             try:
-                # Call the extract_json.py script that outputs JSON to stdout
+                # Call Modal via extract_json.py
                 script_path = Path(__file__).parent / 'extract_json.py'
                 cmd = ['python', str(script_path), tmp_path]
 
-                print(f"  Running extraction...")
+                print(f"  Running Modal extraction...")
 
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     cwd=str(Path(__file__).parent),
-                    timeout=900,  # 15 minute timeout for cold start
+                    timeout=900,  # 15 minute timeout for cold starts
                     encoding='utf-8',
-                    errors='replace'  # Replace encoding errors instead of crashing
+                    errors='replace'
                 )
 
                 if result.returncode != 0:
-                    print(f"  [ERROR] Extraction failed")
-                    error_msg = result.stderr if result.stderr else result.stdout
-                    print(f"  Output: {error_msg[:500]}")
-                    raise Exception(f"Extraction failed: {error_msg[:200]}")
+                    error_msg = result.stderr or result.stdout or "Unknown error"
+                    print(f"  [ERROR] Modal extraction failed")
+                    print(f"  {error_msg[:300]}")
 
-                # Parse JSON from stdout
-                try:
-                    result_data = json.loads(result.stdout.strip())
+                    # Check for common issues
+                    if "modal" in error_msg.lower() and "not found" in error_msg.lower():
+                        error_msg = "Modal not installed. Run: pip install modal"
+                    elif "authenticate" in error_msg.lower() or "token" in error_msg.lower():
+                        error_msg = "Modal not authenticated. Run: modal token new"
+                    elif "not found" in error_msg.lower() and "deconstruct" in error_msg.lower():
+                        error_msg = "Modal app not deployed. Run: modal deploy modal_app.py"
 
-                    if "error" in result_data:
-                        raise Exception(result_data["error"])
+                    results.append({
+                        "document_id": file.filename,
+                        "status": "failed",
+                        "error": error_msg[:200]
+                    })
+                    continue
 
-                    print(f"  [OK] Complete - Tier: {result_data.get('reasoning_tier', 'unknown')}")
+                # Parse JSON result
+                result_data = json.loads(result.stdout.strip())
 
-                    # Save to Supabase if enabled
-                    if SUPABASE_ENABLED:
-                        doc_id = save_extraction_result(
-                            result=result_data,
-                            file_name=file.filename,
-                            file_size=len(pdf_bytes),
-                            file_bytes=pdf_bytes
-                        )
-                        if doc_id:
-                            result_data["database_id"] = doc_id
-                            print(f"  [DB] Saved to Supabase: {doc_id}")
-                        else:
-                            print(f"  [DB] Warning: Failed to save to database")
+                if "error" in result_data:
+                    print(f"  [ERROR] {result_data['error']}")
+                    results.append({
+                        "document_id": file.filename,
+                        "status": "failed",
+                        "error": result_data["error"]
+                    })
+                    continue
 
-                    results.append(result_data)
+                print(f"  [OK] Success - Tier: {result_data.get('reasoning_tier', 'unknown')}")
 
-                except json.JSONDecodeError as e:
-                    print(f"  [ERROR] Failed to parse JSON output")
-                    print(f"  Output: {result.stdout[:500]}")
-                    raise Exception(f"Invalid JSON response: {str(e)}")
+                # Save to Supabase if enabled
+                if SUPABASE_ENABLED:
+                    doc_id = save_extraction_result(
+                        result=result_data,
+                        file_name=file.filename,
+                        file_size=len(pdf_bytes),
+                        file_bytes=pdf_bytes
+                    )
+                    if doc_id:
+                        result_data["database_id"] = doc_id
+                        print(f"  [DB] Saved: {doc_id}")
+
+                results.append(result_data)
+
+            except subprocess.TimeoutExpired:
+                print(f"  [ERROR] Extraction timed out (15 min)")
+                results.append({
+                    "document_id": file.filename,
+                    "status": "failed",
+                    "error": "Extraction timed out. Try again (cold start can be slow)."
+                })
+
+            except json.JSONDecodeError as e:
+                print(f"  [ERROR] Invalid JSON response")
+                results.append({
+                    "document_id": file.filename,
+                    "status": "failed",
+                    "error": f"Invalid JSON: {str(e)}"
+                })
 
             finally:
-                # Clean up temp file
                 Path(tmp_path).unlink(missing_ok=True)
 
+        successful = len([r for r in results if r.get('status') != 'failed'])
         print(f"\n{'='*70}")
-        print(f"[OK] Batch complete: {len(results)} successful")
+        print(f"[DONE] {successful}/{len(files)} successful")
         print(f"{'='*70}\n")
 
         return results
@@ -154,11 +187,26 @@ async def extract_batch(
 
 
 if __name__ == "__main__":
+    print()
     print("=" * 70)
-    print("Deconstruct Simple API")
+    print("  DECONSTRUCT API SERVER")
     print("=" * 70)
-    print("Running on: http://localhost:8000")
-    print("Calls Modal functions via subprocess")
+    print()
+    print("  BEFORE RUNNING THIS SERVER:")
+    print()
+    print("  1. Deploy Modal functions (one-time):")
+    print("     cd gpu")
+    print("     modal deploy modal_app.py")
+    print()
+    print("  2. Set up Modal authentication:")
+    print("     modal token new")
+    print()
+    print("  3. Set Anthropic API key in Modal secrets:")
+    print("     modal secret create anthropic-api-key ANTHROPIC_API_KEY=sk-...")
+    print()
+    print("=" * 70)
+    print(f"  Server starting at: http://localhost:8000")
+    print(f"  API docs at: http://localhost:8000/docs")
     print("=" * 70)
     print()
 
