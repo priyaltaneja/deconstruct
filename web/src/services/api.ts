@@ -5,7 +5,6 @@
 
 import { getApiUrl, getDefaultComplexityThreshold } from '../config/environment';
 import {
-  extractionResultSchema,
   parseExtractionResult,
   ExtractionResult,
 } from '../schemas/validation';
@@ -43,16 +42,18 @@ export class ApiError extends Error {
 }
 
 export class ValidationError extends Error {
-  constructor(message: string, public errors: z.ZodError['errors']) {
+  public errors: z.ZodError['errors'];
+  constructor(message: string, errors: z.ZodError['errors']) {
     super(message);
     this.name = 'ValidationError';
+    this.errors = errors;
   }
 }
 
 /**
  * Create an AbortController with timeout
  */
-function createTimeoutController(timeoutMs: number): { controller: AbortController; timeoutId: NodeJS.Timeout } {
+function createTimeoutController(timeoutMs: number): { controller: AbortController; timeoutId: ReturnType<typeof setTimeout> } {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   return { controller, timeoutId };
@@ -86,7 +87,6 @@ function validateBatchResponse(data: unknown): ExtractionResult[] {
   }
 
   const results: ExtractionResult[] = [];
-  const errors: string[] = [];
 
   data.forEach((item, index) => {
     const parsed = parseExtractionResult(item);
@@ -115,7 +115,7 @@ export const extractDocument = async (
     formData.append('complexity_threshold', String(request.complexityThreshold ?? getDefaultComplexityThreshold()));
     formData.append('force_system2', String(request.forceSystem2 ?? false));
 
-    const response = await fetch(`${MODAL_API_URL}/api/extract`, {
+    const response = await fetch(`${MODAL_API_URL}/extract`, {
       method: 'POST',
       body: formData,
       signal: controller.signal,
@@ -170,7 +170,7 @@ export const extractBatch = async (
     formData.append('force_system2', String(request.forceSystem2 ?? false));
     formData.append('enable_verification', String(request.enableVerification ?? false));
 
-    const response = await fetch(`${MODAL_API_URL}/api/extract/batch`, {
+    const response = await fetch(`${MODAL_API_URL}/extract/batch`, {
       method: 'POST',
       body: formData,
       signal: controller.signal,
@@ -202,7 +202,7 @@ export const extractBatch = async (
 };
 
 export const healthCheck = async (): Promise<{ status: string; supabase_enabled?: boolean }> => {
-  const response = await fetch(`${MODAL_API_URL}/api/health`);
+  const response = await fetch(`${MODAL_API_URL}/health`);
   if (!response.ok) {
     throw new ApiError('Health check failed', response.status, 'server');
   }

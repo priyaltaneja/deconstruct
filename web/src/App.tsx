@@ -1,199 +1,58 @@
-/**
- * Main App Component
- * Modern dark mode dashboard for monitoring GPU pipeline
- */
-
-import React from 'react';
-import { FileUpload } from './components/FileUpload';
-import { JobMonitor } from './components/JobMonitor';
-import { useExtractionStore } from './store/extractionStore';
+import { FileUpload } from '@/components/FileUpload';
+import { ResultsView } from '@/components/ResultsView';
+import { useExtractionStore } from '@/store/extractionStore';
 
 function App() {
   const batches = useExtractionStore((state) => state.batches);
   const activeBatchId = useExtractionStore((state) => state.activeBatchId);
   const setActiveBatch = useExtractionStore((state) => state.setActiveBatch);
 
-  const styles = {
-    container: {
-      minHeight: '100vh',
-      backgroundColor: 'var(--bg-primary)',
-    },
-    header: {
-      background: 'transparent',
-      borderBottom: '1px solid var(--border-color)',
-      padding: '20px 32px',
-      position: 'sticky' as const,
-      top: 0,
-      zIndex: 10,
-      backdropFilter: 'blur(10px)',
-      backgroundColor: 'rgba(10, 14, 26, 0.8)',
-    },
-    headerContent: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    logo: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-    },
-    logoIcon: {
-      fontSize: '1.5em',
-      color: 'var(--accent-blue)',
-    },
-    title: {
-      margin: 0,
-      fontSize: '1.5em',
-      fontWeight: 600,
-      color: 'var(--text-primary)',
-      letterSpacing: '-0.3px',
-    },
-    batchSelector: {
-      backgroundColor: 'rgba(17, 24, 39, 0.6)',
-      padding: '14px 32px',
-      borderBottom: '1px solid var(--border-color)',
-      backdropFilter: 'blur(10px)',
-    },
-    batchSelectorInner: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-    },
-    label: {
-      color: 'var(--text-secondary)',
-      fontSize: '0.9em',
-      fontWeight: 500,
-    },
-    select: {
-      padding: '10px 16px',
-      borderRadius: '8px',
-      border: '1px solid var(--border-color)',
-      fontSize: '14px',
-      backgroundColor: 'var(--bg-tertiary)',
-      color: 'var(--text-primary)',
-      minWidth: '300px',
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-      outline: 'none',
-    },
-    mainContent: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      padding: '24px 32px',
-    },
-    card: {
-      backgroundColor: 'var(--bg-secondary)',
-      borderRadius: '16px',
-      padding: '32px',
-      boxShadow: 'var(--shadow-lg)',
-      border: '1px solid var(--border-color)',
-      transition: 'all 0.3s ease',
-    },
-    cardTitle: {
-      marginTop: 0,
-      marginBottom: '24px',
-      fontSize: '1.25em',
-      fontWeight: 600,
-      color: 'var(--text-primary)',
-    },
-    welcomeSection: {
-      textAlign: 'center' as const,
-      padding: '0 20px 16px',
-      marginBottom: '0',
-    },
-    welcomeTitle: {
-      fontSize: '1.5em',
-      fontWeight: 500,
-      marginBottom: '8px',
-      color: 'var(--text-primary)',
-      letterSpacing: '-0.3px',
-    },
-    welcomeText: {
-      fontSize: '1em',
-      color: 'var(--text-secondary)',
-      maxWidth: '700px',
-      margin: '0 auto',
-      lineHeight: '1.6',
-    },
-    uploadSection: {
-      maxWidth: '1000px',
-      margin: '0 auto',
-      width: '100%',
-    },
-  };
+  if (activeBatchId) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border bg-card">
+          <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+            <button
+              onClick={() => setActiveBatch(null)}
+              className="font-semibold tracking-tight hover:opacity-70 transition-opacity"
+            >
+              Deconstruct
+            </button>
+            {batches.size > 0 && (
+              <select
+                value={activeBatchId || ''}
+                onChange={(e) => setActiveBatch(e.target.value || null)}
+                className="bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+              >
+                <option value="">New extraction</option>
+                {Array.from(batches.values())
+                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                  .map((batch) => (
+                    <option key={batch.id} value={batch.id}>
+                      {batch.name} ({batch.completedJobs}/{batch.totalJobs})
+                    </option>
+                  ))}
+              </select>
+            )}
+          </div>
+        </header>
+        <main className="max-w-5xl mx-auto px-6 py-10">
+          <ResultsView batchId={activeBatchId} />
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <div style={styles.container}>
-      {/* Minimal Header */}
-      <header style={styles.header}>
-        <div style={styles.headerContent}>
-          <div style={styles.logo}>
-            <div style={styles.logoIcon}>⚡</div>
-            <h1 style={styles.title}>Deconstruct</h1>
-          </div>
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="w-full max-w-xl space-y-8">
+        <div className="text-center space-y-3">
+          <h1 className="text-4xl font-semibold tracking-tight">Deconstruct</h1>
+          <p className="text-muted-foreground">
+            Extract structured data from documents. Vision LLMs run on Modal servers—your data never leaves your infrastructure.
+          </p>
         </div>
-      </header>
-
-      {/* Batch Selector */}
-      {batches.size > 0 && (
-        <div style={styles.batchSelector}>
-          <div style={styles.batchSelectorInner}>
-            <label style={styles.label}>Active Batch:</label>
-            <select
-              value={activeBatchId || ''}
-              onChange={(e) => setActiveBatch(e.target.value || null)}
-              style={styles.select}
-              onMouseOver={(e) => {
-                (e.target as HTMLSelectElement).style.borderColor = 'var(--accent-blue)';
-              }}
-              onMouseOut={(e) => {
-                (e.target as HTMLSelectElement).style.borderColor = 'var(--border-color)';
-              }}
-            >
-              <option value="">Select a batch...</option>
-              {Array.from(batches.values())
-                .sort(
-                  (a, b) =>
-                    new Date(b.createdAt).getTime() -
-                    new Date(a.createdAt).getTime()
-                )
-                .map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batch.name} ({batch.completedJobs}/{batch.totalJobs})
-                  </option>
-                ))}
-            </select>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div style={styles.mainContent}>
-        {!activeBatchId ? (
-          <>
-            {/* Welcome Section */}
-            <div style={styles.welcomeSection}>
-              <h2 style={styles.welcomeTitle}>Welcome to Deconstruct</h2>
-              <p style={styles.welcomeText}>
-                Upload your documents to start extracting structured data.
-              </p>
-            </div>
-
-            {/* Upload Section */}
-            <div style={styles.uploadSection}>
-              <div style={{ ...styles.card, padding: '40px' }}>
-                <FileUpload />
-              </div>
-            </div>
-          </>
-        ) : (
-          <JobMonitor />
-        )}
+        <FileUpload />
       </div>
     </div>
   );

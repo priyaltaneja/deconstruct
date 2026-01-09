@@ -1,69 +1,73 @@
-/**
- * Drag-and-Drop File Upload Component
- * Modern dark mode with blue accents
- */
-
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { validateFile, formatFileSize } from '../schemas/validation';
-import { useExtractionStore } from '../store/extractionStore';
-import { extractBatch } from '../services/api';
-import { getDefaultComplexityThreshold } from '../config/environment';
+import { Upload, X, FileText, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useExtractionStore } from '@/store/extractionStore';
+import { getApiUrl } from '@/config/environment';
 
 interface FileWithPreview extends File {
-  preview?: string;
-  validationError?: string;
+  error?: string;
 }
 
-export const FileUpload: React.FC = () => {
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const ACCEPTED_TYPES = {
+  'application/pdf': ['.pdf'],
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+};
+
+export function FileUpload() {
   const [files, setFiles] = useState<FileWithPreview[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const createBatch = useExtractionStore((state) => state.createBatch);
-  const addJob = useExtractionStore((state) => state.addJob);
+  const createBatch = useExtractionStore((s) => s.createBatch);
+  const addJob = useExtractionStore((s) => s.addJob);
+  const updateJob = useExtractionStore((s) => s.updateJob);
+  const setActiveBatch = useExtractionStore((s) => s.setActiveBatch);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const validatedFiles = acceptedFiles.map((file) => {
-      const validation = validateFile(file);
-      const fileWithPreview: FileWithPreview = Object.assign(file, {
-        validationError: validation.valid ? undefined : validation.error,
-      });
-      return fileWithPreview;
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+    setUploadError(null);
+    const newFiles: FileWithPreview[] = acceptedFiles.map((file) => {
+      if (file.size > MAX_FILE_SIZE) {
+        return Object.assign(file, { error: 'File too large (max 50MB)' });
+      }
+      return file;
     });
-
-    setFiles((prev) => [...prev, ...validatedFiles]);
+    rejectedFiles.forEach((rejected) => {
+      const file = rejected.file as FileWithPreview;
+      file.error = rejected.errors[0]?.message || 'Invalid file';
+      newFiles.push(file);
+    });
+    setFiles((prev) => [...prev, ...newFiles]);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpg', '.jpeg'],
-    },
-    maxSize: 50 * 1024 * 1024, // 50MB
+    accept: ACCEPTED_TYPES,
+    maxSize: MAX_FILE_SIZE,
   });
 
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleUpload = async () => {
-    const validFiles = files.filter((f) => !f.validationError);
-    if (validFiles.length === 0) {
-      alert('No valid files to upload');
-      return;
-    }
+  const validFiles = files.filter((f) => !f.error);
 
-    setUploading(true);
+  const handleUpload = async () => {
+    if (validFiles.length === 0) return;
+
+    setIsUploading(true);
+    setUploadError(null);
 
     try {
-      // Create batch
-      const batchId = createBatch(`Batch ${new Date().toLocaleString()}`);
+      const batchName = validFiles.length === 1
+        ? validFiles[0].name
+        : `${validFiles.length} documents`;
+      const batchId = createBatch(batchName);
 
-      // Create job entries
       const jobIds: string[] = [];
-      validFiles.forEach((file) => {
+      for (const file of validFiles) {
         const jobId = addJob({
           batchId,
           fileName: file.name,
@@ -71,267 +75,151 @@ export const FileUpload: React.FC = () => {
           status: 'queued',
         });
         jobIds.push(jobId);
-      });
+      }
 
-      // Update status to processing
-      const updateJob = useExtractionStore.getState().updateJob;
-      jobIds.forEach((id) => updateJob(id, { status: 'processing' }));
+      setActiveBatch(batchId);
 
-      // Send to Modal API
-      console.log('Sending batch to Modal API...');
-      const results = await extractBatch({
-        files: validFiles,
-        complexityThreshold: getDefaultComplexityThreshold(),
-        forceSystem2: false,
-        enableVerification: false,
-      });
+      const apiUrl = getApiUrl();
 
-      // Update jobs with results
-      results.forEach((result: any, index: number) => {
-        const jobId = jobIds[index];
-        updateJob(jobId, {
-          status: 'completed',
-          documentType: result.document_type,
-          reasoningTier: result.reasoning_tier,
-          modelUsed: result.model_used,
-          processingTimeMs: result.processing_time_ms,
-          costUsd: result.cost_usd,
-          confidence: result.confidence_score,
-          verificationStatus: result.verification_status,
-          complexityMarkers: result.complexity_markers,
-          extractedData: result,
-        });
-      });
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i];
+        const jobId = jobIds[i];
+
+        updateJob(jobId, { status: 'processing' });
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('document_id', file.name);
+
+          const response = await fetch(`${apiUrl}/extract`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          updateJob(jobId, {
+            status: 'completed',
+            documentType: result.document_type,
+            reasoningTier: result.reasoning_tier,
+            modelUsed: result.model_used,
+            extractedData: result,
+            confidence: result.confidence_score,
+            processingTimeMs: result.processing_time_ms,
+            costUsd: result.cost_usd,
+          });
+        } catch (err) {
+          updateJob(jobId, {
+            status: 'failed',
+            error: err instanceof Error ? err.message : 'Extraction failed',
+          });
+        }
+      }
 
       setFiles([]);
-      alert(`Successfully processed ${validFiles.length} file(s)!`);
-    } catch (error) {
-      console.error('Upload failed:', error);
-      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-      // Mark only this batch's jobs as failed (not ALL processing jobs)
-      const updateJob = useExtractionStore.getState().updateJob;
-      jobIds.forEach((jobId) => {
-        updateJob(jobId, {
-          status: 'failed',
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
-      setUploading(false);
+      setIsUploading(false);
     }
   };
 
-  const styles = {
-    dropzone: {
-      border: '2px dashed var(--border-color)',
-      borderRadius: '16px',
-      padding: '60px 40px',
-      textAlign: 'center' as const,
-      cursor: 'pointer',
-      backgroundColor: isDragActive ? 'var(--bg-tertiary)' : 'transparent',
-      transition: 'all 0.3s ease',
-      position: 'relative' as const,
-      overflow: 'hidden' as const,
-    },
-    dropzoneActive: {
-      borderColor: 'var(--accent-blue)',
-      backgroundColor: 'rgba(59, 130, 246, 0.05)',
-      boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.1)',
-    },
-    uploadIcon: {
-      fontSize: '4em',
-      marginBottom: '24px',
-      color: 'var(--accent-blue)',
-      opacity: 0.9,
-    },
-    uploadText: {
-      color: 'var(--text-primary)',
-      fontSize: '1.2em',
-      marginBottom: '12px',
-      fontWeight: 500,
-    },
-    uploadSubtext: {
-      fontSize: '0.95em',
-      color: 'var(--text-muted)',
-      lineHeight: '1.5',
-    },
-    fileList: {
-      marginTop: '32px',
-    },
-    fileListHeader: {
-      color: 'var(--text-primary)',
-      fontSize: '1.1em',
-      marginBottom: '16px',
-      fontWeight: 600,
-    },
-    fileListContainer: {
-      maxHeight: '320px',
-      overflowY: 'auto' as const,
-    },
-    fileItem: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '12px 16px',
-      border: '1px solid var(--border-color)',
-      borderRadius: '8px',
-      marginBottom: '8px',
-      backgroundColor: 'var(--bg-tertiary)',
-      transition: 'all 0.2s ease',
-    },
-    fileItemError: {
-      borderColor: 'var(--status-error)',
-      backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    },
-    fileName: {
-      fontWeight: 500,
-      color: 'var(--text-primary)',
-      marginBottom: '4px',
-    },
-    fileSize: {
-      fontSize: '0.85em',
-      color: 'var(--text-secondary)',
-    },
-    fileError: {
-      fontSize: '0.85em',
-      color: 'var(--status-error)',
-      marginTop: '4px',
-    },
-    removeButton: {
-      padding: '6px 12px',
-      cursor: 'pointer',
-      backgroundColor: 'var(--status-error)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '6px',
-      fontSize: '0.875em',
-      fontWeight: 500,
-      transition: 'all 0.2s ease',
-    },
-    uploadButton: {
-      marginTop: '24px',
-      padding: '16px 32px',
-      backgroundColor: uploading ? 'var(--border-color)' : 'var(--accent-blue)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '12px',
-      cursor: uploading ? 'not-allowed' : 'pointer',
-      fontSize: '1em',
-      fontWeight: 600,
-      width: '100%',
-      transition: 'all 0.2s ease',
-      boxShadow: uploading ? 'none' : 'var(--shadow-md)',
-    },
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
-    <div>
+    <div className="space-y-6">
       <div
         {...getRootProps()}
-        style={{
-          ...styles.dropzone,
-          ...(isDragActive ? styles.dropzoneActive : {}),
-        }}
-        onMouseOver={(e) => {
-          if (!isDragActive) {
-            e.currentTarget.style.borderColor = 'var(--accent-blue-light)';
+        className={`
+          relative border-2 border-dashed rounded-xl p-10 text-center cursor-pointer
+          transition-all duration-200 ease-out
+          ${isDragActive
+            ? 'border-primary bg-primary/5 scale-[1.01]'
+            : 'border-border hover:border-muted-foreground/50 hover:bg-muted/50'
           }
-        }}
-        onMouseOut={(e) => {
-          if (!isDragActive) {
-            e.currentTarget.style.borderColor = 'var(--border-color)';
-          }
-        }}
+          ${isUploading ? 'pointer-events-none opacity-50' : ''}
+        `}
       >
         <input {...getInputProps()} />
-        <div style={styles.uploadIcon}>📄</div>
-        {isDragActive ? (
-          <p style={styles.uploadText}>Drop files here</p>
-        ) : (
+        <div className="flex flex-col items-center gap-3">
+          <div className={`
+            w-12 h-12 rounded-full flex items-center justify-center
+            ${isDragActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
+            transition-colors
+          `}>
+            <Upload className="w-5 h-5" />
+          </div>
           <div>
-            <p style={styles.uploadText}>Drag & drop files here</p>
-            <p style={styles.uploadSubtext}>
-              or click to select files • Max 50MB per file
-              <br />
-              <span style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>
-                PDF, PNG, JPEG supported
-              </span>
+            <p className="font-medium">
+              {isDragActive ? 'Drop files here' : 'Drop files or click to browse'}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              PDF, PNG, or JPEG up to 50MB
             </p>
           </div>
-        )}
+        </div>
       </div>
 
       {files.length > 0 && (
-        <div style={styles.fileList}>
-          <h3 style={styles.fileListHeader}>
-            Files ({files.length})
-          </h3>
-          <div style={styles.fileListContainer}>
-            {files.map((file, index) => (
-              <div
-                key={index}
-                style={{
-                  ...styles.fileItem,
-                  ...(file.validationError ? styles.fileItemError : {}),
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.transform = 'translateX(4px)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.transform = 'translateX(0)';
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={styles.fileName}>{file.name}</div>
-                  <div style={styles.fileSize}>
-                    {formatFileSize(file.size)}
-                  </div>
-                  {file.validationError && (
-                    <div style={styles.fileError}>
-                      {file.validationError}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => removeFile(index)}
-                  style={styles.removeButton}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.backgroundColor = '#dc2626';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--status-error)';
-                  }}
-                >
-                  Remove
-                </button>
+        <div className="space-y-2">
+          {files.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className={`
+                flex items-center gap-3 p-3 rounded-lg border bg-card
+                ${file.error ? 'border-destructive/30 bg-destructive/5' : 'border-border'}
+              `}
+            >
+              <div className={`
+                w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0
+                ${file.error ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}
+              `}>
+                <FileText className="w-4 h-4" />
               </div>
-            ))}
-          </div>
-
-          <button
-            onClick={handleUpload}
-            disabled={uploading || files.every((f) => f.validationError)}
-            style={styles.uploadButton}
-            onMouseOver={(e) => {
-              if (!uploading && !files.every((f) => f.validationError)) {
-                e.currentTarget.style.backgroundColor = 'var(--accent-blue-hover)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-              }
-            }}
-            onMouseOut={(e) => {
-              if (!uploading) {
-                e.currentTarget.style.backgroundColor = 'var(--accent-blue)';
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-              }
-            }}
-          >
-            {uploading ? 'Uploading...' : `Upload ${files.length} File${files.length > 1 ? 's' : ''}`}
-          </button>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{file.name}</p>
+                <p className={`text-xs ${file.error ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  {file.error || formatFileSize(file.size)}
+                </p>
+              </div>
+              <button
+                onClick={() => removeFile(index)}
+                className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+          ))}
         </div>
+      )}
+
+      {uploadError && (
+        <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
+          {uploadError}
+        </p>
+      )}
+
+      {validFiles.length > 0 && (
+        <Button onClick={handleUpload} disabled={isUploading} className="w-full" size="lg">
+          {isUploading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            `Extract ${validFiles.length} file${validFiles.length !== 1 ? 's' : ''}`
+          )}
+        </Button>
       )}
     </div>
   );
-};
+}
