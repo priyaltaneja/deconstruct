@@ -47,7 +47,19 @@ from config import (
 
 
 # ============ MODAL SETUP ============
-app = modal.App("deconstruct-extractor")
+
+# Get path to current directory for mounting local files
+import pathlib
+LOCAL_DIR = pathlib.Path(__file__).parent
+
+# Mount for local Python modules (schemas, config)
+local_modules = modal.Mount.from_local_file(LOCAL_DIR / "schemas.py", remote_path="/root/schemas.py")
+config_mount = modal.Mount.from_local_file(LOCAL_DIR / "config.py", remote_path="/root/config.py")
+
+app = modal.App(
+    "deconstruct-extractor",
+    mounts=[local_modules, config_mount],
+)
 
 # Base image with common dependencies
 base_image = (
@@ -77,6 +89,7 @@ vllm_text_image = (
         "vllm>=0.4.0",
         "torch>=2.0.0",
         "transformers>=4.40.0",
+        "pydantic>=2.0",
     )
 )
 
@@ -95,6 +108,7 @@ vllm_vision_image = (
         "pillow",
         "pdf2image",
         "qwen-vl-utils",
+        "pydantic>=2.0",
     )
 )
 
