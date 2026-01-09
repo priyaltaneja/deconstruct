@@ -236,8 +236,7 @@ def analyze_complexity(text: str, page_count: int) -> ComplexityMarkers:
     gpu=SYSTEM1_GPU,
     volumes={"/models": models_volume},
     timeout=SYSTEM1_TIMEOUT,
-    container_idle_timeout=300,  # Keep warm for 5 min
-    allow_concurrent_inputs=10,  # Handle multiple requests
+    scaledown_window=300,  # Keep warm for 5 min
 )
 class TextLLM:
     """vLLM-powered text LLM for fast extraction."""
@@ -274,8 +273,7 @@ class TextLLM:
     gpu=SYSTEM2_GPU,
     volumes={"/models": models_volume},
     timeout=SYSTEM2_TIMEOUT,
-    container_idle_timeout=300,
-    allow_concurrent_inputs=5,
+    scaledown_window=300,
 )
 class VisionLLM:
     """vLLM-powered vision LLM for complex document extraction."""
@@ -322,8 +320,7 @@ class VisionLLM:
     gpu="T4",  # Lightweight GPU for OCR
     volumes={"/models": models_volume},
     timeout=120,
-    container_idle_timeout=300,
-    allow_concurrent_inputs=20,  # OCR is fast, can handle many
+    scaledown_window=300,
 )
 class OCRService:
     """PaddleOCR service for text extraction."""
@@ -334,10 +331,8 @@ class OCRService:
 
         print("Loading PaddleOCR...")
         self.ocr = PaddleOCR(
-            use_angle_cls=True,
+            use_textline_orientation=True,
             lang='en',
-            use_gpu=True,
-            show_log=False,
         )
         print("PaddleOCR loaded!")
 
