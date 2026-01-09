@@ -19,6 +19,13 @@ import json
 import tempfile
 from pathlib import Path
 
+from config import (
+    get_cors_origins,
+    DEFAULT_COMPLEXITY_THRESHOLD,
+    API_PORT,
+    SUBPROCESS_TIMEOUT,
+)
+
 # Import Supabase persistence
 try:
     from supabase_client import save_extraction_result, get_recent_extractions
@@ -30,10 +37,10 @@ except ImportError as e:
 
 app = FastAPI(title="Deconstruct Simple API")
 
-# CORS - must be configured before routes
+# CORS - use environment-configured origins (no wildcards in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,7 +72,7 @@ async def list_extractions(limit: int = 20):
 async def extract_batch(
     files: list[UploadFile] = File(...),
     batch_name: str = Form("Untitled Batch"),
-    complexity_threshold: float = Form(0.8),
+    complexity_threshold: float = Form(default=DEFAULT_COMPLEXITY_THRESHOLD),
     force_system2: bool = Form(False),
     enable_verification: bool = Form(True),
 ):
@@ -82,13 +89,15 @@ async def extract_batch(
 
             # Read file bytes
             pdf_bytes = await file.read()
-
-            # Save to temp file for Modal extraction
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-                tmp.write(pdf_bytes)
-                tmp_path = tmp.name
+            tmp_path = None
 
             try:
+                # Save to temp file for Modal extraction
+                # Use delete=False so we can pass the path to subprocess
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                    tmp.write(pdf_bytes)
+                    tmp_path = tmp.name
+
                 # Call Modal via extract_json.py
                 script_path = Path(__file__).parent / 'extract_json.py'
                 cmd = ['python', str(script_path), tmp_path]
@@ -100,7 +109,7 @@ async def extract_batch(
                     capture_output=True,
                     text=True,
                     cwd=str(Path(__file__).parent),
-                    timeout=900,  # 15 minute timeout for cold starts
+                    timeout=SUBPROCESS_TIMEOUT,
                     encoding='utf-8',
                     errors='replace'
                 )
@@ -154,7 +163,7 @@ async def extract_batch(
                 results.append(result_data)
 
             except subprocess.TimeoutExpired:
-                print(f"  [ERROR] Extraction timed out (15 min)")
+                print(f"  [ERROR] Extraction timed out ({SUBPROCESS_TIMEOUT}s)")
                 results.append({
                     "document_id": file.filename,
                     "status": "failed",
@@ -169,8 +178,22 @@ async def extract_batch(
                     "error": f"Invalid JSON: {str(e)}"
                 })
 
+            except Exception as e:
+                # Catch any other unexpected errors
+                print(f"  [ERROR] Unexpected error: {e}")
+                results.append({
+                    "document_id": file.filename,
+                    "status": "failed",
+                    "error": "Unexpected processing error"
+                })
+
             finally:
-                Path(tmp_path).unlink(missing_ok=True)
+                # Always clean up temp file, even if exception occurred
+                if tmp_path:
+                    try:
+                        Path(tmp_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass  # Ignore cleanup errors
 
         successful = len([r for r in results if r.get('status') != 'failed'])
         print(f"\n{'='*70}")
@@ -183,7 +206,11 @@ async def extract_batch(
         print(f"\n[ERROR] Batch extraction failed: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Sanitize error message - don't expose internal details to client
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred during batch extraction. Please try again."
+        )
 
 
 if __name__ == "__main__":
@@ -210,4 +237,4 @@ if __name__ == "__main__":
     print("=" * 70)
     print()
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=API_PORT)

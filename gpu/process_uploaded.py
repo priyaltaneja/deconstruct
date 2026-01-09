@@ -8,6 +8,8 @@ import modal
 import json
 from pathlib import Path
 
+from config import DEFAULT_COMPLEXITY_THRESHOLD
+
 def process_pdf(pdf_path: str):
     """Process a PDF through the Modal extraction pipeline"""
 
@@ -47,7 +49,7 @@ def process_pdf(pdf_path: str):
         result = route_and_extract.remote(
             pdf_bytes=pdf_bytes,
             document_id=pdf_file.stem,
-            complexity_threshold=0.8,
+            complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
             force_system2=False,
         )
 
@@ -68,11 +70,11 @@ def process_pdf(pdf_path: str):
 
         if result.reasoning_tier == "system2":
             print(f"   ➡️  Routed to SYSTEM 2 (Deep Reasoning)")
-            print(f"   💡 Reason: Complexity score ({markers.complexity_score:.2f}) >= threshold (0.8)")
+            print(f"   💡 Reason: Complexity score ({markers.complexity_score:.2f}) >= threshold ({DEFAULT_COMPLEXITY_THRESHOLD})")
             print(f"   🧠 Model: {result.model_used}")
         else:
             print(f"   ➡️  Routed to SYSTEM 1 (Fast Extraction)")
-            print(f"   💡 Reason: Complexity score ({markers.complexity_score:.2f}) < threshold (0.8)")
+            print(f"   💡 Reason: Complexity score ({markers.complexity_score:.2f}) < threshold ({DEFAULT_COMPLEXITY_THRESHOLD})")
             print(f"   ⚡ Model: {result.model_used}")
         print()
 

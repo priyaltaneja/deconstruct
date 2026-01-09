@@ -99,7 +99,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       activeBatchId: null,
 
       createBatch: (name: string) => {
-        const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const batchId = crypto.randomUUID();
         const batch: Batch = {
           id: batchId,
           name,
@@ -120,7 +120,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       },
 
       addJob: (jobData) => {
-        const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const jobId = crypto.randomUUID();
         const job: ExtractionJob = {
           ...jobData,
           id: jobId,

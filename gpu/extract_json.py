@@ -8,6 +8,8 @@ import json
 import base64
 from pathlib import Path
 
+from config import DEFAULT_COMPLEXITY_THRESHOLD
+
 def extract_pdf(pdf_path: str):
     """Process PDF via Modal Python SDK"""
     import modal
@@ -28,7 +30,7 @@ def extract_pdf(pdf_path: str):
     result = route_fn.remote(
         pdf_b64=pdf_b64,
         document_id=document_id,
-        complexity_threshold=0.8,
+        complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
         force_system2=False,
     )
 

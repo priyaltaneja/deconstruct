@@ -14,13 +14,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import the Modal app and functions directly
 from modal_app import route_and_extract
+from config import get_cors_origins, DEFAULT_COMPLEXITY_THRESHOLD, API_PORT
 
 app = FastAPI(title="Deconstruct Local Proxy")
 
-# CORS for local web app
+# CORS - use environment-configured origins (no wildcards in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,7 +41,7 @@ async def health():
 @app.post("/api/extract")
 async def extract_single(
     file: UploadFile = File(...),
-    complexity_threshold: float = Form(0.8),
+    complexity_threshold: float = Form(default=DEFAULT_COMPLEXITY_THRESHOLD),
     force_system2: bool = Form(False),
 ):
     """Extract single document via Modal"""
@@ -71,16 +72,20 @@ async def extract_single(
         return result.model_dump()
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Sanitize error message - don't expose internal details to client
+        raise HTTPException(
+            status_code=500,
+            detail="Document extraction failed. Please try again."
+        )
 
 
 @app.post("/api/batch-extract")
 async def extract_batch(
     files: list[UploadFile] = File(...),
-    complexity_threshold: float = Form(0.8),
+    complexity_threshold: float = Form(default=DEFAULT_COMPLEXITY_THRESHOLD),
     force_system2: bool = Form(False),
 ):
     """Extract multiple documents via Modal"""
@@ -115,10 +120,14 @@ async def extract_batch(
         return results
 
     except Exception as e:
-        print(f"\n❌ Batch extraction failed: {e}")
+        print(f"\nBatch extraction failed: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Sanitize error message - don't expose internal details to client
+        raise HTTPException(
+            status_code=500,
+            detail="Batch extraction failed. Please try again."
+        )
 
 
 if __name__ == "__main__":
@@ -133,4 +142,4 @@ if __name__ == "__main__":
     print("=" * 70)
     print()
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=API_PORT)

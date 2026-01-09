@@ -16,6 +16,7 @@ from schemas import (
     BatchExtractionRequest,
     ComplexityMarkers,
 )
+from config import get_cors_origins, DEFAULT_COMPLEXITY_THRESHOLD
 
 # Create Modal app
 app = modal.App("deconstruct-api")
@@ -23,10 +24,10 @@ app = modal.App("deconstruct-api")
 # Create FastAPI app
 web_app = FastAPI(title="Deconstruct API", version="1.0.0")
 
-# Add CORS middleware for local development
+# Add CORS middleware - use environment-configured origins
 web_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,7 +48,7 @@ async def root():
 async def extract_single_document(
     file: UploadFile = File(...),
     force_system2: bool = Form(False),
-    complexity_threshold: float = Form(0.8),
+    complexity_threshold: float = Form(default=DEFAULT_COMPLEXITY_THRESHOLD),
     enable_verification: bool = Form(True),
 ):
     """
@@ -79,9 +80,10 @@ async def extract_single_document(
         }
 
     except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail="Invalid request format")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error extracting document: {e}")
+        raise HTTPException(status_code=500, detail="Document extraction failed. Please try again.")
 
 
 @web_app.post("/api/extract/batch")
@@ -89,7 +91,7 @@ async def extract_batch(
     files: List[UploadFile] = File(...),
     batch_name: str = Form("Untitled Batch"),
     force_system2: bool = Form(False),
-    complexity_threshold: float = Form(0.8),
+    complexity_threshold: float = Form(default=DEFAULT_COMPLEXITY_THRESHOLD),
     enable_verification: bool = Form(True),
 ):
     """
@@ -128,9 +130,10 @@ async def extract_batch(
         }
 
     except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail="Invalid request format")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in batch extraction: {e}")
+        raise HTTPException(status_code=500, detail="Batch extraction failed. Please try again.")
 
 
 @web_app.post("/api/complexity/analyze")
@@ -151,12 +154,13 @@ async def analyze_complexity(file: UploadFile = File(...)):
             "data": {
                 "complexity_markers": markers.model_dump(),
                 "document_info": doc_info,
-                "recommended_tier": "system2" if markers.complexity_score >= 0.8 else "system1",
+                "recommended_tier": "system2" if markers.complexity_score >= DEFAULT_COMPLEXITY_THRESHOLD else "system1",
             },
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error analyzing complexity: {e}")
+        raise HTTPException(status_code=500, detail="Complexity analysis failed. Please try again.")
 
 
 @web_app.get("/api/stats")

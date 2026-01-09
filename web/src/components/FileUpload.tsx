@@ -8,6 +8,7 @@ import { useDropzone } from 'react-dropzone';
 import { validateFile, formatFileSize } from '../schemas/validation';
 import { useExtractionStore } from '../store/extractionStore';
 import { extractBatch } from '../services/api';
+import { getDefaultComplexityThreshold } from '../config/environment';
 
 interface FileWithPreview extends File {
   preview?: string;
@@ -80,7 +81,7 @@ export const FileUpload: React.FC = () => {
       console.log('Sending batch to Modal API...');
       const results = await extractBatch({
         files: validFiles,
-        complexityThreshold: 0.8,
+        complexityThreshold: getDefaultComplexityThreshold(),
         forceSystem2: false,
         enableVerification: false,
       });
@@ -108,16 +109,13 @@ export const FileUpload: React.FC = () => {
       console.error('Upload failed:', error);
       alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 
-      // Mark jobs as failed
+      // Mark only this batch's jobs as failed (not ALL processing jobs)
       const updateJob = useExtractionStore.getState().updateJob;
-      const jobs = useExtractionStore.getState().jobs;
-      jobs.forEach((job) => {
-        if (job.status === 'processing') {
-          updateJob(job.id, {
-            status: 'failed',
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
+      jobIds.forEach((jobId) => {
+        updateJob(jobId, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
       });
     } finally {
       setUploading(false);
