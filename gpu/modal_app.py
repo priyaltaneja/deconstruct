@@ -152,10 +152,10 @@ class VisionLLM:
             model=SYSTEM2_VISION_MODEL,
             download_dir="/models/vllm",
             dtype="bfloat16",
-            max_model_len=8192,
-            gpu_memory_utilization=0.85,
+            max_model_len=16384,
+            gpu_memory_utilization=0.90,
             trust_remote_code=True,
-            limit_mm_per_prompt={"image": MAX_PAGES_FOR_EXTRACTION},
+            limit_mm_per_prompt={"image": 6},
         )
         self.sampling_params = SamplingParams(
             temperature=SYSTEM2_TEMPERATURE,
@@ -166,14 +166,11 @@ class VisionLLM:
 
     @modal.method()
     def generate_with_images(self, prompt: str, image_data: List[dict]) -> str:
-        """Generate with images. image_data is list of {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}"""
-
-        # Build multimodal prompt
+        """Generate with images."""
         messages = [{
             "role": "user",
             "content": image_data + [{"type": "text", "text": prompt}]
         }]
-
         outputs = self.llm.chat(messages, self.sampling_params)
         return outputs[0].outputs[0].text
 
@@ -199,10 +196,12 @@ def extract_document(
     print(f"[{document_id}] {page_count} pages")
 
     # Prepare images for vLLM (base64 encoded)
+    # Limit pages and size to fit within model's token limit
+    # ~1200 tokens per 512px image, 8k input budget = ~6 pages max
+    max_pages = min(6, len(images))
     image_data = []
-    for i, img in enumerate(images[:MAX_PAGES_FOR_EXTRACTION]):
-        # Resize if needed
-        max_size = 1024
+    for i, img in enumerate(images[:max_pages]):
+        max_size = 512
         if max(img.size) > max_size:
             ratio = max_size / max(img.size)
             new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
