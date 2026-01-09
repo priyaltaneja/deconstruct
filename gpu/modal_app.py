@@ -350,7 +350,7 @@ class OCRService:
         all_text = []
         for i, img in enumerate(images[:max_pages]):
             img_array = np.array(img)
-            result = self.ocr.ocr(img_array, cls=True)
+            result = self.ocr.ocr(img_array)
 
             if result and result[0]:
                 page_text = []
@@ -378,7 +378,7 @@ class OCRService:
         # Quick OCR
         text_parts = []
         for img in images:
-            result = self.ocr.ocr(np.array(img), cls=True)
+            result = self.ocr.ocr(np.array(img))
             if result and result[0]:
                 for line in result[0]:
                     if line and len(line) >= 2:
