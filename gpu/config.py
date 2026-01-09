@@ -34,7 +34,7 @@ def get_cors_origins() -> List[str]:
 
 # Default complexity threshold for System 1/System 2 routing
 # Documents with complexity score >= threshold use System 2 (Vision LLM)
-DEFAULT_COMPLEXITY_THRESHOLD = float(os.getenv("COMPLEXITY_THRESHOLD", "0.7"))
+DEFAULT_COMPLEXITY_THRESHOLD = float(os.getenv("COMPLEXITY_THRESHOLD", "0.5"))
 
 # API server port
 API_PORT = int(os.getenv("API_PORT", "8000"))
