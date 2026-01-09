@@ -55,6 +55,8 @@ vision_image = (
         "pdf2image",
         "qwen-vl-utils",
         "pydantic>=2.0",
+        "fastapi",
+        "python-multipart",
     )
     .add_local_python_source("schemas", "config")
 )
@@ -305,6 +307,54 @@ def batch_extract(request: BatchExtractionRequest) -> List[ExtractionResult]:
     ))
 
     return results
+
+
+# ============ WEB API ENDPOINTS ============
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+web_app = FastAPI()
+
+# Enable CORS for frontend
+web_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@web_app.post("/extract")
+async def api_extract(
+    file: UploadFile = File(...),
+    document_id: str = Form(None),
+):
+    """Extract structured data from uploaded PDF."""
+    try:
+        pdf_bytes = await file.read()
+        pdf_b64 = base64.b64encode(pdf_bytes).decode()
+        doc_id = document_id or file.filename or f"doc_{int(time.time())}"
+
+        result = route_and_extract.remote(pdf_b64=pdf_b64, document_id=doc_id)
+        return result.model_dump()
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
+@web_app.get("/health")
+async def health():
+    return {"status": "ok", "model": SYSTEM2_VISION_MODEL}
+
+
+@app.function(image=vision_image, timeout=600)
+@modal.asgi_app()
+def fastapi_app():
+    return web_app
 
 
 # ============ LOCAL ENTRYPOINT ============
