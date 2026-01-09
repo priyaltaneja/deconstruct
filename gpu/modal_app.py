@@ -77,10 +77,10 @@ models_volume = modal.Volume.from_name("deconstruct-models", create_if_missing=T
 
 
 # ============ DOCUMENT ANALYSIS ============
-def analyze_pdf_complexity(pdf_bytes: bytes) -> Tuple[ComplexityMarkers, str, List[dict]]:
+def analyze_pdf_complexity(pdf_bytes: bytes) -> Tuple[dict, str, List[dict], float]:
     """
-    Analyze PDF to determine complexity and extract text if possible.
-    Returns (complexity_markers, extracted_text, page_analysis)
+    Analyze PDF complexity using font/structure analysis.
+    Returns (complexity_info, extracted_text, page_analysis, complexity_score)
     """
     import fitz  # PyMuPDF
 
@@ -88,100 +88,217 @@ def analyze_pdf_complexity(pdf_bytes: bytes) -> Tuple[ComplexityMarkers, str, Li
     page_count = len(doc)
 
     total_text = ""
-    total_images = 0
-    total_tables = 0
-    has_multi_column = False
-    text_coverage_low = False
     page_analysis = []
 
+    # Aggregate metrics
+    all_fonts = set()
+    all_font_sizes = set()
+    all_colors = set()
+    total_images = 0
+    total_drawings = 0
+    total_links = 0
+    total_annotations = 0
+    form_fields = 0
+
+    # Layout metrics
+    column_structures = []  # Track column count per page
+    text_densities = []
+    block_counts = []
+
     for page_num, page in enumerate(doc):
+        page_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+
         # Extract text
-        text = page.get_text()
-        total_text += text + "\n\n"
+        page_text = page.get_text()
+        total_text += page_text + "\n\n"
+
+        # Analyze fonts and styling from detailed dict
+        page_fonts = set()
+        page_sizes = set()
+        page_colors = set()
+
+        for block in page_dict.get("blocks", []):
+            if block.get("type") == 0:  # Text block
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        font = span.get("font", "")
+                        size = round(span.get("size", 0), 1)
+                        color = span.get("color", 0)
+                        if font:
+                            page_fonts.add(font)
+                            all_fonts.add(font)
+                        if size > 0:
+                            page_sizes.add(size)
+                            all_font_sizes.add(size)
+                        all_colors.add(color)
+                        page_colors.add(color)
 
         # Count images
-        images = page.get_images()
+        images = page.get_images(full=True)
         total_images += len(images)
 
-        # Detect tables (look for grid-like structures)
-        tables = page.find_tables()
-        total_tables += len(tables.tables) if tables else 0
+        # Count vector drawings
+        drawings = page.get_drawings()
+        total_drawings += len(drawings)
 
-        # Check text blocks for multi-column layout
+        # Count links and annotations
+        links = page.get_links()
+        total_links += len(links)
+
+        annots = list(page.annots()) if page.annots() else []
+        total_annotations += len(annots)
+
+        # Check for form fields (widgets)
+        widgets = list(page.widgets()) if page.widgets() else []
+        form_fields += len(widgets)
+
+        # Analyze column structure
         blocks = page.get_text("blocks")
-        if len(blocks) > 1:
-            x_positions = [b[0] for b in blocks if b[4].strip()]  # x0 of text blocks
-            if len(set(int(x / 50) for x in x_positions)) > 2:  # Multiple column zones
-                has_multi_column = True
+        text_blocks = [b for b in blocks if len(b) > 4 and isinstance(b[4], str) and b[4].strip()]
+        block_counts.append(len(text_blocks))
 
-        # Check if page has low text coverage (might be scanned)
+        # Detect columns by analyzing x-position clusters
+        num_columns = 1
+        if len(text_blocks) > 3:
+            x_positions = sorted([b[0] for b in text_blocks])
+            # Find gaps in x positions (column separators)
+            gaps = []
+            for i in range(1, len(x_positions)):
+                gap = x_positions[i] - x_positions[i-1]
+                if gap > 50:  # Significant gap
+                    gaps.append(gap)
+            if len(gaps) >= 2:
+                num_columns = min(len(gaps) + 1, 4)
+        column_structures.append(num_columns)
+
+        # Text density (chars per page area)
         page_area = page.rect.width * page.rect.height
-        text_area = sum((b[2] - b[0]) * (b[3] - b[1]) for b in blocks if b[4].strip())
-        coverage = text_area / page_area if page_area > 0 else 0
+        text_density = len(page_text.strip()) / max(page_area, 1) * 10000
+        text_densities.append(text_density)
+
+        # Check if likely scanned
+        is_scanned = len(page_text.strip()) < 100 and len(images) > 0
 
         page_analysis.append({
             "page": page_num + 1,
-            "text_length": len(text),
+            "text_chars": len(page_text.strip()),
+            "fonts_used": len(page_fonts),
+            "font_sizes": len(page_sizes),
+            "colors": len(page_colors),
             "images": len(images),
-            "tables": len(tables.tables) if tables else 0,
-            "text_coverage": round(coverage, 2),
+            "drawings": len(drawings),
+            "columns": num_columns,
+            "is_scanned": is_scanned,
         })
-
-        if coverage < 0.1 and len(images) > 0:
-            text_coverage_low = True
 
     doc.close()
 
-    # Build complexity markers
-    markers = ComplexityMarkers(
-        has_nested_tables=total_tables > 2,
-        has_multi_column_layout=has_multi_column,
-        has_handwriting=False,  # Can't detect without vision
-        has_low_quality_scan=text_coverage_low,
-        has_ambiguous_language=False,
-        has_complex_formulas=total_images > 5,
-        language_is_mixed=False,
-        page_count=page_count,
-        estimated_entities=len(total_text.split()) // 50,
-    )
-
-    return markers, total_text.strip(), page_analysis
-
-
-def should_use_vision(markers: ComplexityMarkers, text: str, threshold: float) -> Tuple[bool, str]:
-    """
-    Decide whether to use Vision LLM based on complexity.
-    Returns (use_vision, reasoning)
-    """
+    # Calculate complexity score with weighted factors
+    score = 0.0
     reasons = []
 
-    # Check text quality
+    # 1. Font complexity (many fonts = complex formatting)
+    font_count = len(all_fonts)
+    if font_count > 5:
+        contrib = min(0.15, (font_count - 5) * 0.02)
+        score += contrib
+        reasons.append(f"{font_count} fonts")
+
+    # 2. Font size variety (many sizes = headings, hierarchies)
+    size_count = len(all_font_sizes)
+    if size_count > 6:
+        contrib = min(0.1, (size_count - 6) * 0.015)
+        score += contrib
+        reasons.append(f"{size_count} font sizes")
+
+    # 3. Color usage (multiple colors = styled document)
+    color_count = len(all_colors)
+    if color_count > 3:
+        contrib = min(0.1, (color_count - 3) * 0.02)
+        score += contrib
+        reasons.append(f"{color_count} colors")
+
+    # 4. Images (embedded images need vision)
+    if total_images > 0:
+        contrib = min(0.25, total_images * 0.03)
+        score += contrib
+        reasons.append(f"{total_images} images")
+
+    # 5. Vector drawings (charts, diagrams)
+    if total_drawings > 50:
+        contrib = min(0.15, (total_drawings - 50) * 0.001)
+        score += contrib
+        reasons.append(f"{total_drawings} drawings")
+
+    # 6. Multi-column layout
+    avg_columns = sum(column_structures) / max(len(column_structures), 1)
+    if avg_columns > 1.3:
+        score += 0.15
+        reasons.append(f"multi-column ({avg_columns:.1f} avg)")
+
+    # 7. Form fields (need special handling)
+    if form_fields > 0:
+        score += min(0.2, form_fields * 0.05)
+        reasons.append(f"{form_fields} form fields")
+
+    # 8. Low text density (scanned or image-heavy)
+    avg_density = sum(text_densities) / max(len(text_densities), 1)
+    if avg_density < 5:
+        score += 0.25
+        reasons.append(f"low text density ({avg_density:.1f})")
+
+    # 9. High block count variation (complex layout)
+    if block_counts:
+        block_variance = max(block_counts) - min(block_counts)
+        if block_variance > 20:
+            score += 0.1
+            reasons.append(f"varied layout (block var: {block_variance})")
+
+    # 10. Annotations/links (interactive document)
+    if total_annotations > 5:
+        score += 0.05
+        reasons.append(f"{total_annotations} annotations")
+
+    score = min(1.0, score)
+
+    # If no complexity reasons found, document is simple
+    if not reasons:
+        reasons.append("simple text document")
+
+    complexity_info = {
+        "page_count": page_count,
+        "total_images": total_images,
+        "total_drawings": total_drawings,
+        "font_count": font_count,
+        "font_size_count": size_count,
+        "color_count": color_count,
+        "avg_columns": round(avg_columns, 2),
+        "form_fields": form_fields,
+        "avg_text_density": round(avg_density, 2),
+        "reasons": reasons,
+    }
+
+    return complexity_info, total_text.strip(), page_analysis, score
+
+
+def should_use_vision(complexity_info: dict, text: str, score: float, threshold: float) -> Tuple[bool, List[str]]:
+    """
+    Decide whether to use Vision LLM based on complexity.
+    Returns (use_vision, reasons)
+    """
+    reasons = complexity_info.get("reasons", [])
+
+    # Insufficient text always needs vision
     if len(text) < 100:
-        reasons.append("Insufficient extractable text (<100 chars)")
+        reasons.append("insufficient extractable text")
+        return True, reasons
 
-    if markers.has_low_quality_scan:
-        reasons.append("Low text coverage detected (possibly scanned)")
-
-    if markers.has_nested_tables:
-        reasons.append(f"Complex table structures detected")
-
-    if markers.has_multi_column_layout:
-        reasons.append("Multi-column layout detected")
-
-    if markers.has_complex_formulas:
-        reasons.append("Many images/formulas detected")
-
-    # Calculate score
-    score = markers.complexity_score
-
+    # Score above threshold
     if score >= threshold:
-        reasons.append(f"Complexity score {score:.2f} >= threshold {threshold}")
-        return True, " | ".join(reasons) if reasons else "High complexity score"
+        return True, reasons
 
-    if len(text) < 100:
-        return True, "Insufficient text for System 1"
-
-    return False, f"Complexity score {score:.2f} < threshold {threshold}, good text extraction"
+    # Good text extraction, use fast path
+    return False, [f"score {score:.2f} < threshold {threshold}", "good text extraction"]
 
 
 # ============ SYSTEM 1: TEXT LLM ============
@@ -369,27 +486,33 @@ def route_and_extract(
         "status": "running",
     })
 
-    markers, extracted_text, page_analysis = analyze_pdf_complexity(pdf_bytes)
+    complexity_info, extracted_text, page_analysis, complexity_score = analyze_pdf_complexity(pdf_bytes)
 
     reasoning_steps[-1].update({
         "status": "complete",
         "duration_ms": int((time.time() - step_start) * 1000),
         "details": {
-            "pages": markers.page_count,
-            "text_length": len(extracted_text),
-            "tables_detected": sum(p["tables"] for p in page_analysis),
-            "images_detected": sum(p["images"] for p in page_analysis),
-            "complexity_score": round(markers.complexity_score, 3),
+            "pages": complexity_info["page_count"],
+            "text_chars": len(extracted_text),
+            "fonts": complexity_info["font_count"],
+            "font_sizes": complexity_info["font_size_count"],
+            "colors": complexity_info["color_count"],
+            "images": complexity_info["total_images"],
+            "drawings": complexity_info["total_drawings"],
+            "avg_columns": complexity_info["avg_columns"],
+            "form_fields": complexity_info["form_fields"],
+            "text_density": complexity_info["avg_text_density"],
+            "complexity_score": round(complexity_score, 2),
         }
     })
 
     # Step 2: Route decision
     step_start = time.time()
-    use_vision, routing_reason = should_use_vision(markers, extracted_text, complexity_threshold)
+    use_vision, routing_reasons = should_use_vision(complexity_info, extracted_text, complexity_score, complexity_threshold)
 
     if force_system2:
         use_vision = True
-        routing_reason = "Forced to System 2 (Vision LLM)"
+        routing_reasons = ["forced to Vision LLM"]
 
     reasoning_tier = "system2" if use_vision else "system1"
     model_used = SYSTEM2_VISION_MODEL if use_vision else SYSTEM1_TEXT_MODEL
@@ -403,7 +526,8 @@ def route_and_extract(
         "details": {
             "selected_tier": reasoning_tier,
             "model": model_used,
-            "reason": routing_reason,
+            "reasons": routing_reasons,
+            "threshold": complexity_threshold,
         }
     })
 
@@ -498,6 +622,19 @@ def route_and_extract(
         }
     })
 
+    # Build complexity markers for result
+    markers = ComplexityMarkers(
+        has_nested_tables=complexity_info["total_images"] > 2,  # Images often contain tables
+        has_multi_column_layout=complexity_info["avg_columns"] > 1.3,
+        has_handwriting=False,
+        has_low_quality_scan=complexity_info["avg_text_density"] < 5,
+        has_ambiguous_language=False,
+        has_complex_formulas=complexity_info["total_drawings"] > 50,
+        language_is_mixed=complexity_info["color_count"] > 5,  # Proxy: many colors = mixed content
+        page_count=complexity_info["page_count"],
+        estimated_entities=len(extracted_text.split()) // 50,
+    )
+
     # Build result
     result = ExtractionResult(
         document_id=document_id,
@@ -528,6 +665,7 @@ def route_and_extract(
     # Return with reasoning
     return {
         **result.model_dump(),
+        "complexity_score": round(complexity_score, 3),
         "reasoning_steps": reasoning_steps,
         "page_analysis": page_analysis,
     }

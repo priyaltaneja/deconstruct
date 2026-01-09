@@ -164,11 +164,15 @@ export function ResultsView({ batchId }: ResultsViewProps) {
                                           : 'text-emerald-600 font-medium'
                                         : ''
                                     }>
-                                      {typeof value === 'number'
-                                        ? key.includes('score') || key.includes('confidence')
-                                          ? `${(value * 100).toFixed(1)}%`
-                                          : value.toLocaleString()
-                                        : String(value)
+                                      {Array.isArray(value)
+                                        ? value.join(', ')
+                                        : typeof value === 'number'
+                                          ? key.includes('score') || key.includes('confidence')
+                                            ? `${(value * 100).toFixed(1)}%`
+                                            : value.toLocaleString()
+                                          : typeof value === 'boolean'
+                                            ? value ? 'yes' : 'no'
+                                            : String(value)
                                       }
                                     </span>
                                   </div>
