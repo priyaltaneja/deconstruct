@@ -243,7 +243,7 @@ def extract_document(
         document_id=document_id,
         document_type=document_type,
         complexity_markers=complexity_markers,
-        reasoning_tier="vision",
+        reasoning_tier="system2",
         model_used=SYSTEM2_VISION_MODEL,
         processing_time_ms=processing_time,
         cost_usd=estimate_gpu_cost(processing_time, SYSTEM2_GPU),
