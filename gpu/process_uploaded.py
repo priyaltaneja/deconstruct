@@ -6,6 +6,7 @@ Run: python process_uploaded.py <path_to_pdf>
 import sys
 import modal
 import json
+import base64
 from pathlib import Path
 
 from config import DEFAULT_COMPLEXITY_THRESHOLD
@@ -27,6 +28,9 @@ def process_pdf(pdf_path: str):
     with open(pdf_file, 'rb') as f:
         pdf_bytes = f.read()
 
+    # Encode as base64 for transmission
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
     print(f"📄 Processing: {pdf_file.name}")
     print(f"📊 Size: {len(pdf_bytes):,} bytes")
     print()
@@ -34,7 +38,7 @@ def process_pdf(pdf_path: str):
     # Get Modal function
     try:
         print("🔗 Connecting to Modal...")
-        route_and_extract = modal.Function.lookup("deconstruct-shredder", "route_and_extract")
+        route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
         print("✓ Connected to Modal deployment")
         print()
     except Exception as e:
@@ -47,7 +51,7 @@ def process_pdf(pdf_path: str):
 
     try:
         result = route_and_extract.remote(
-            pdf_bytes=pdf_bytes,
+            pdf_b64=pdf_b64,
             document_id=pdf_file.stem,
             complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
             force_system2=False,

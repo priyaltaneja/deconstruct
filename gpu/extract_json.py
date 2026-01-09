@@ -24,7 +24,7 @@ def extract_pdf(pdf_path: str):
     pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
     # Look up the deployed function
-    route_fn = modal.Function.from_name("deconstruct-shredder", "route_and_extract")
+    route_fn = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
 
     # Call remotely with bytes
     result = route_fn.remote(

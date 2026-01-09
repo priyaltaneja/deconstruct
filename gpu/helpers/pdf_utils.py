@@ -75,7 +75,7 @@ class PDFContext:
             format: Image format (PNG, JPEG)
 
         Returns:
-            List of content blocks suitable for Claude/OpenAI APIs
+            List of content blocks suitable for vision LLM APIs
         """
         images = self.get_images(dpi=dpi)
 

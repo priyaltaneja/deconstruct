@@ -3,6 +3,7 @@ Simple test to verify Modal deployment
 Creates a minimal test document
 """
 
+import base64
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -32,20 +33,23 @@ if __name__ == "__main__":
 
     print("Creating test PDF...")
     pdf_bytes = create_test_pdf()
-    print(f"✓ Created test PDF ({len(pdf_bytes)} bytes)")
+    print(f"Created test PDF ({len(pdf_bytes)} bytes)")
 
     print("\nTesting Modal deployment...")
     print("Looking up function...")
 
     try:
-        route_and_extract = modal.Function.lookup("deconstruct-shredder", "route_and_extract")
-        print("✓ Found route_and_extract function")
+        route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+        print("Found route_and_extract function")
+
+        # Encode PDF as base64
+        pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
         print("\nRunning extraction...")
         result = route_and_extract.remote(
-            pdf_bytes=pdf_bytes,
+            pdf_b64=pdf_b64,
             document_id="test_doc_001",
-            complexity_threshold=0.8,
+            complexity_threshold=0.7,
             force_system2=False,
         )
 
@@ -59,9 +63,9 @@ if __name__ == "__main__":
         print(f"Cost: ${result.cost_usd:.4f}")
         print(f"Confidence: {result.confidence_score * 100:.1f}%")
         print(f"Complexity Score: {result.complexity_markers.complexity_score:.2f}")
-        print("\n✅ TEST PASSED!")
+        print("\nTEST PASSED!")
 
     except Exception as e:
-        print(f"\n❌ TEST FAILED: {e}")
+        print(f"\nTEST FAILED: {e}")
         import traceback
         traceback.print_exc()

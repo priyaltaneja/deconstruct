@@ -5,6 +5,9 @@ This script demonstrates various ways to use Deconstruct for document extraction
 Run sections individually to understand the workflow.
 """
 
+import base64
+from config import DEFAULT_COMPLEXITY_THRESHOLD
+
 # ============================================
 # Example 1: Basic Single Document Extraction
 # ============================================
@@ -23,15 +26,17 @@ def example_single_extraction():
     with open(pdf_path, "rb") as f:
         pdf_bytes = f.read()
 
+    # Encode as base64 for transmission
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
     # Get the Modal function
-    app = modal.App.lookup("deconstruct-shredder")
-    route_and_extract = modal.Function.lookup("deconstruct-shredder", "route_and_extract")
+    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
 
     # Run extraction
     result = route_and_extract.remote(
-        pdf_bytes=pdf_bytes,
-        document_id=pdf_path.name,
-        complexity_threshold=0.8,
+        pdf_b64=pdf_b64,
+        document_id=pdf_path.stem,
+        complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
         force_system2=False,
     )
 
@@ -62,7 +67,6 @@ def example_batch_extraction():
     """Process multiple PDFs in parallel"""
     import modal
     from pathlib import Path
-    from schemas import BatchExtractionRequest
 
     # Collect PDFs from a directory
     pdf_dir = Path("./sample_pdfs")
@@ -77,27 +81,30 @@ def example_batch_extraction():
 
     print(f"📁 Found {len(pdf_files)} PDFs")
 
-    # Read all PDFs
-    documents = []
+    # Read all PDFs and encode as base64
+    documents_b64 = []
+    document_ids = []
     for pdf_file in pdf_files:
         with open(pdf_file, "rb") as f:
-            documents.append(f.read())
-
-    # Create batch request
-    request = BatchExtractionRequest(
-        batch_id=f"batch_{pdf_dir.name}",
-        documents=documents,
-        force_system2=False,
-        complexity_threshold=0.8,
-        enable_verification=True,
-    )
+            pdf_bytes = f.read()
+            documents_b64.append(base64.b64encode(pdf_bytes).decode('utf-8'))
+            document_ids.append(pdf_file.stem)
 
     # Get Modal function
-    batch_extract = modal.Function.lookup("deconstruct-shredder", "batch_extract")
+    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
 
-    # Run batch extraction
+    # Run batch extraction (process each document)
     print("🚀 Starting batch extraction...")
-    results = batch_extract.remote(request)
+    results = []
+    for pdf_b64, doc_id in zip(documents_b64, document_ids):
+        result = route_and_extract.remote(
+            pdf_b64=pdf_b64,
+            document_id=doc_id,
+            complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
+            force_system2=False,
+        )
+        results.append(result)
+        print(f"  ✓ Processed {doc_id}")
 
     # Aggregate statistics
     total_cost = sum(r.cost_usd for r in results)
@@ -133,11 +140,14 @@ def example_complexity_analysis():
     with open(pdf_path, "rb") as f:
         pdf_bytes = f.read()
 
+    # Encode as base64 for transmission
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
     # Get Modal function
-    system1_scan = modal.Function.lookup("deconstruct-shredder", "system1_scan")
+    system1_scan = modal.Function.lookup("deconstruct-extractor", "system1_scan")
 
     # Run complexity scan
-    markers, doc_info = system1_scan.remote(pdf_bytes, pdf_path.name)
+    markers, doc_info = system1_scan.remote(pdf_b64, pdf_path.stem)
 
     # Display results
     print(f"📊 Complexity Analysis for {pdf_path.name}")
@@ -156,7 +166,7 @@ def example_complexity_analysis():
     print(f"  Page Count: {markers.page_count}")
     print(f"  Estimated Entities: {markers.estimated_entities}")
 
-    print(f"\n{'🧠 System 2 Recommended' if markers.complexity_score >= 0.8 else '⚡ System 1 Sufficient'}")
+    print(f"\n{'🧠 System 2 Recommended' if markers.complexity_score >= DEFAULT_COMPLEXITY_THRESHOLD else '⚡ System 1 Sufficient'}")
 
     return markers, doc_info
 
@@ -166,7 +176,7 @@ def example_complexity_analysis():
 # ============================================
 
 def example_force_system2():
-    """Force high-quality extraction with System 2"""
+    """Force high-quality extraction with System 2 (Vision LLM)"""
     import modal
     from pathlib import Path
 
@@ -178,16 +188,19 @@ def example_force_system2():
     with open(pdf_path, "rb") as f:
         pdf_bytes = f.read()
 
-    # Get Modal function
-    system2_extract = modal.Function.lookup("deconstruct-shredder", "system2_extract")
+    # Encode as base64 for transmission
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
-    # Run System 2 extraction (Claude Opus)
-    print("🧠 Running deep extraction with Claude Opus...")
-    result = system2_extract.remote(
-        pdf_bytes=pdf_bytes,
-        document_id=pdf_path.name,
-        document_type="legal",  # Specify if known
-        complexity_markers={},  # Optional
+    # Get Modal function - use route_and_extract with force_system2=True
+    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+
+    # Run System 2 extraction (Qwen2-VL Vision Model)
+    print("🧠 Running deep extraction with Vision LLM...")
+    result = route_and_extract.remote(
+        pdf_b64=pdf_b64,
+        document_id=pdf_path.stem,
+        complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
+        force_system2=True,  # Force System 2
     )
 
     print(f"✅ Deep extraction complete!")
@@ -227,8 +240,16 @@ def example_store_in_supabase():
     with open(pdf_path, "rb") as f:
         pdf_bytes = f.read()
 
-    route_and_extract = modal.Function.lookup("deconstruct-shredder", "route_and_extract")
-    result = route_and_extract.remote(pdf_bytes, pdf_path.name)
+    # Encode as base64 for transmission
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
+    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+    result = route_and_extract.remote(
+        pdf_b64=pdf_b64,
+        document_id=pdf_path.stem,
+        complexity_threshold=DEFAULT_COMPLEXITY_THRESHOLD,
+        force_system2=False,
+    )
 
     # Create batch in Supabase
     batch = supabase.table("batches").insert({
