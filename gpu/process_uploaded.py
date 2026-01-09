@@ -38,7 +38,7 @@ def process_pdf(pdf_path: str):
     # Get Modal function
     try:
         print("🔗 Connecting to Modal...")
-        route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+        route_and_extract = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
         print("✓ Connected to Modal deployment")
         print()
     except Exception as e:

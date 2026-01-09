@@ -30,7 +30,7 @@ def example_single_extraction():
     pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
     # Get the Modal function
-    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+    route_and_extract = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
 
     # Run extraction
     result = route_and_extract.remote(
@@ -91,7 +91,7 @@ def example_batch_extraction():
             document_ids.append(pdf_file.stem)
 
     # Get Modal function
-    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+    route_and_extract = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
 
     # Run batch extraction (process each document)
     print("🚀 Starting batch extraction...")
@@ -144,7 +144,7 @@ def example_complexity_analysis():
     pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
     # Get Modal function
-    system1_scan = modal.Function.lookup("deconstruct-extractor", "system1_scan")
+    system1_scan = modal.Function.from_name("deconstruct-extractor", "system1_scan")
 
     # Run complexity scan
     markers, doc_info = system1_scan.remote(pdf_b64, pdf_path.stem)
@@ -192,7 +192,7 @@ def example_force_system2():
     pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
     # Get Modal function - use route_and_extract with force_system2=True
-    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+    route_and_extract = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
 
     # Run System 2 extraction (Qwen2-VL Vision Model)
     print("🧠 Running deep extraction with Vision LLM...")
@@ -243,7 +243,7 @@ def example_store_in_supabase():
     # Encode as base64 for transmission
     pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
-    route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+    route_and_extract = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
     result = route_and_extract.remote(
         pdf_b64=pdf_b64,
         document_id=pdf_path.stem,

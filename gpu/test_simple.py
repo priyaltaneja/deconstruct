@@ -39,7 +39,7 @@ if __name__ == "__main__":
     print("Looking up function...")
 
     try:
-        route_and_extract = modal.Function.lookup("deconstruct-extractor", "route_and_extract")
+        route_and_extract = modal.Function.from_name("deconstruct-extractor", "route_and_extract")
         print("Found route_and_extract function")
 
         # Encode PDF as base64
